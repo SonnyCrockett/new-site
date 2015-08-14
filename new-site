@@ -1,0 +1,161 @@
+#!/bin/sh
+
+HTDOCS="/path/to/your/workspace"
+SASSSITE="sassbin/sites"
+yellow="\x1B[1;33m"
+nc="\x1B[0m"
+
+read -p "Which client is this for? [list/clients/here] " client
+read -p "Product Title: " title
+read -p "Site name: " sitename
+read -p "Alias: " alias
+read -p "Is there an existing remote repository? [yes/no] " yn
+
+if [ $yn = "yes" ]
+    then 
+        read -p "OK, are we working in git or svn? [git/svn] " repo
+fi
+if [[ $yn = "yes" && $repo = "git" ]]
+    then
+        read -p "Paste in the git repo url: " git
+fi
+if [[ $yn = "yes" && $repo = "svn" ]]
+    then
+        read -p "Paste in the svn repo url: " svn
+fi
+if [ $yn = "no" ]
+    then
+        read -p "OK, are we setting up a CMS? [wp/ee/no] " cms
+fi
+
+# Duplicate _new-site template and rename
+cp -r $HTDOCS/clients/$client/$SASSSITE/_new-site/ $HTDOCS/clients/$client/$SASSSITE/$sitename.com/
+
+# Create new alias in profile for quick access to files
+printf "\nalias $alias=\"cd $HTDOCS/clients/$client/sites/$sitename.com\"" >> ~/.zshrc
+
+# Updates /etc/hosts file with new entry
+sudo sed -n -i.bu 'H;${x;s/## '$client'\n## ------------------------------------------------\n/&127.0.0.1   '$sitename'.local\
+/;p;}' /etc/hosts
+# sudo -- sh -c "echo 127.0.0.1'\t'sites/$sitename.local >> /etc/hosts"
+
+echo "Created directories"
+echo "Created alias"
+echo "Updated /etc/hosts file"
+
+# Updates vhosts file with new entry
+printf "\n
+# $title
+<VirtualHost *:80>
+    ServerName $sitename.local
+    ServerAlias $sitename.*.xip.io
+    DocumentRoot \"$HTDOCS/clients/$client/sites/$sitename.com\"
+    <Directory \"$HTDOCS/clients/$client/sites/$sitename.com\">
+       # Options Indexes FollowSymLinks Includes ExecCGI
+        AllowOverride All
+        Require all granted
+        ServerSignature Off
+        Options Indexes FollowSymLinks IncludesNoExec
+    </Directory>
+    ErrorLog \"logs/$sitename.local-error_log\"
+</VirtualHost>
+" >> /Applications/XAMPP/xamppfiles/etc/extra/httpd-vhosts.conf
+echo "Updated httpd-vhosts file"
+
+# Clone the existing repo from github
+if [[ $yn = "yes" && $repo = "git" ]]
+    then
+        mkdir $HTDOCS/clients/$client/sites/$sitename.com
+        cd $HTDOCS/clients/$client/sites/$sitename.com
+        git clone $git
+fi
+
+# Checkout the existing repo from svn
+if [[ $yn = "yes" && $repo = "svn" ]]
+    then
+        mkdir $HTDOCS/clients/$client/sites/$sitename.com
+        cd $HTDOCS/clients/$client/sites/$sitename.com
+        svn checkout $svn
+fi
+
+# If we're setting up WordPress
+if [[ $yn = "no" && $cms = "wp" ]]
+    then
+        mkdir $HTDOCS/clients/$client/sites/$sitename.com
+        cd $HTDOCS/clients/$client/sites/$sitename.com
+        wget http://wordpress.org/latest.tar.gz 
+        tar zxvf latest.tar.gz
+        mv wordpress/* ./
+        rm -rf latest.tar.gz wordpress
+fi
+
+# If it's just a basic site
+if [[ $yn = "no" && $cms = "no" ]]
+    then
+    cp -r $HTDOCS/clients/$client/sites/_new-site/ $HTDOCS/clients/$client/sites/$sitename.com/
+fi
+
+# Update LiveReload with the new site
+echo "Attempting to add $HTDOCS/clients/$client/sites/$sitename.com to LiveReload"
+open -a "LiveReload" && open 'livereload:add?path='$HTDOCS'/clients/'$client'/sites/'$sitename'.com'
+echo "Added to LiveReload"
+
+# Restart Apache and MySQL
+sudo /Applications/XAMPP/xamppfiles/xampp reloadapache && sudo /Applications/XAMPP/xamppfiles/xampp reloadmysql
+echo "XAMPP: Restarted"
+
+echo "
+************************************************************************
+"
+echo "= Main site directory: ${yellow}$HTDOCS/clients/$client/sites/$sitename.com${nc}"
+echo "= Sass site directory: ${yellow}$HTDOCS/$SASSSITE/$sitename.com${nc}"
+echo "= Use this alias for quick access to your repo: ${yellow}$alias${nc}"
+echo "= Environment is now ready to use ${yellow}http://$sitename.local${nc}"
+echo "
+************************************************************************"
+
+
+# FUTURE UPDATES
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# INSTALL GULP IN DIRECTORY
+# cd $HTDOCS/clients/$sitename.$DOMAIN.com
+# npm init
+# npm install --save-dev gulp
+
+#INSTALL GULP-RUBY-SASS IN DIRECTORY
+# npm install --save-dev gulp-ruby-sass
+
+# INSTALL GULP-AUTOPREFIXER
+# npm install --save-dev gulp-autoprefixer
+
+# CREATE GULPFILE IN DIRECTORY
+# touch gulpfile.js
+
+# ADD CODE IN GULPFILE.JS
+# printf "var gulp = require('gulp'),
+# sass = require('gulp-ruby-sass'),
+# prefix = require('gulp-autoprefixer');
+
+# DEFINES SASS PATH VAR
+# var sassRoot = '$HTDOCS/clients/$SASSSITE/$sitename.$DOMAIN.com/';
+
+# // Gulp task
+# gulp.task('sass-to-css', function(){
+# return gulp.src(sassRoot+'*.scss')
+# .pipe(sass({sourcemap: true}))
+# .pipe(prefix("last 3 versions")
+# .pipe(gulp.dest('$HTDOCS/clients/$sitename.$DOMAIN.com/css'));
+# });
+
+# GULP WATCH
+# gulp.task('watch-sass', function(){
+# // What to watch
+# gulp.watch('build/sass/main.scss', function(){
+# // What to run
+# gulp.run('sass-to-css');
+# });
+# });
+# " >> gulpfile.js
+
+
+exit
